@@ -47,7 +47,7 @@ std::wstring rstr_w(size_t length)
 	return result;
 }
 
-std::vector<uint8_t> process_multiline_data(const std::vector<uint8_t>& data, int mod, bool is_encrypt, const std::vector<uint8_t>& key = {})
+std::vector<uint8_t> process_multiline_data(const std::vector<uint8_t>& data, int mod, bool is_encrypt, const std::array<uint8_t, 32>& key = {})
 {
 	std::string data_str(data.begin(), data.end());
 
@@ -81,9 +81,18 @@ std::vector<uint8_t> process_multiline_data(const std::vector<uint8_t>& data, in
 
 			if (mod == 0)
 			{
-				processed = is_encrypt
-					? g_cryptor()->b64_enc(g_cryptor()->encrypt_bin(line_bytes, key))
-					: g_cryptor()->decrypt_bin(g_cryptor()->b64_dec(line_bytes), key);
+				if (is_encrypt)
+				{
+					if (g_cryptor()->encrypt_bin(line_bytes, key, processed))
+					{
+						processed = g_cryptor()->b64_enc(processed);
+					}
+				}
+				else
+				{
+					processed = g_cryptor()->b64_dec(line_bytes);
+					g_cryptor()->decrypt_bin(processed, key, processed);
+				}
 			}
 			else
 			{
@@ -141,9 +150,9 @@ void Funcs::str_enc_dec(bool is_encrypt)
 		if (input_data.empty()) return;
 
 		std::vector<uint8_t> output_data;
-		std::vector<uint8_t> key_hash = (g_core()->ed_current_item == 0 && !key.empty())
+		std::array<uint8_t, 32>  key_hash = (g_core()->ed_current_item == 0 && !key.empty())
 			? g_cryptor()->sha256(key)
-			: std::vector<uint8_t>();
+			: std::array<uint8_t, 32>();
 
 		int mode = g_core()->ed_current_item;
 		bool single_line = g_core()->all_in_one_line;
@@ -152,9 +161,18 @@ void Funcs::str_enc_dec(bool is_encrypt)
 		{
 			if (single_line)
 			{
-				output_data = is_encrypt
-					? g_cryptor()->b64_enc(g_cryptor()->encrypt_bin(input_data, key_hash))
-					: g_cryptor()->decrypt_bin(g_cryptor()->b64_dec(input_data), key_hash);
+				if (is_encrypt)
+				{
+					if (g_cryptor()->encrypt_bin(input_data, key_hash, output_data))
+					{
+						output_data = g_cryptor()->b64_enc(output_data);
+					}
+				}
+				else
+				{
+					output_data = g_cryptor()->b64_dec(input_data);
+					g_cryptor()->decrypt_bin(output_data, key_hash, output_data);
+				}
 			}
 			else
 			{
@@ -191,7 +209,7 @@ void Funcs::file_enc_dec(bool is_encrypt)
 		std::string key(g_core()->ed_key_buf);
 		if (key.empty() || !std::filesystem::exists(g_core()->file_path)) return;
 
-		std::vector<uint8_t> key_hash = g_cryptor()->sha256(key);
+		std::array<uint8_t, 32>  key_hash = g_cryptor()->sha256(key);
 		std::filesystem::path original_path = g_core()->file_path;
 		std::filesystem::path output_path = original_path.parent_path() / (is_encrypt ? L"enc_" : L"dec_");
 		output_path += rstr_w(5);
@@ -259,39 +277,42 @@ void Funcs::shuffle()
 
 void Funcs::random_pass()
 {
-	std::string char_set = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+	static constexpr char char_set_base[] =
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+	std::string char_set(char_set_base);
 
 	if (g_core()->spec_symbs)
-		char_set += g_core()->spec_buf;
-
-	try
 	{
-		std::string rnd_pass;
-		rnd_pass.reserve(100);
-
-		std::random_device rd;
-		std::mt19937 gen(rd());
-		std::uniform_int_distribution<> dist(0, static_cast<int>(char_set.size()) - 1);
-
-		for (int line = 0; line < 10; ++line)
-		{
-			for (size_t i = 0; i < g_core()->pass_size; ++i)
-			{
-				rnd_pass += char_set[dist(gen)];
-			}
-			rnd_pass += '\n';
-		}
-
-		if (!rnd_pass.empty())
-			rnd_pass.pop_back();
-
-		memset(g_core()->ps_out_buf, 0, sizeof(g_core()->ps_out_buf));
-		if (rnd_pass.size() <= sizeof(g_core()->ps_out_buf))
-		{
-			memcpy(g_core()->ps_out_buf, rnd_pass.data(), rnd_pass.size());
-		}
+		char_set.append(g_core()->spec_buf);
 	}
-	catch (...) {}
+
+	const size_t pass_len = g_core()->pass_size;
+	const size_t lines = 10;
+	const size_t total_size = (pass_len + 1) * lines;
+
+	std::string rnd_pass;
+	rnd_pass.reserve(total_size);
+
+	std::random_device rd;
+	std::mt19937 gen(rd());
+	std::uniform_int_distribution<> dist(0, static_cast<int>(char_set.size()) - 1);
+
+	for (size_t line = 0; line < lines; ++line)
+	{
+		for (size_t i = 0; i < pass_len; ++i)
+			rnd_pass += char_set[dist(gen)];
+		rnd_pass += '\n';
+	}
+
+	if (!rnd_pass.empty())
+	{
+		rnd_pass.pop_back();
+	}
+
+	if (rnd_pass.size() <= sizeof(g_core()->ps_out_buf)) {
+		memcpy(g_core()->ps_out_buf, rnd_pass.data(), rnd_pass.size());
+	}
 }
 
 void Funcs::pick_dir(std::wstring& fp)
@@ -345,107 +366,113 @@ void Funcs::merge_file()
 {
 	struct FileData
 	{
-		int index;
-		std::wstring path;
-
-		bool operator<(const FileData& other) const {
+		unsigned char index;
+		std::filesystem::path path;
+		bool operator<(const FileData& other) const noexcept
+		{
 			return index < other.index;
 		}
 	};
 
-	if (!std::filesystem::exists(g_core()->dir_path)) return;
+	const auto& core_path = g_core()->dir_path;
+	if (!std::filesystem::exists(core_path)) return;
 
-	auto parent_path = std::filesystem::path(g_core()->dir_path).parent_path().wstring();
-	std::wstring outfile = parent_path + L"\\" + rstr_w(3) + L"_merged";
+	const auto parent_path = std::filesystem::path(core_path).parent_path();
+	const std::wstring outfile = parent_path.wstring() + L"\\" + rstr_w(3) + L"_merged";
 
-	const size_t header_size = 4;
-	auto header = std::make_unique<char[]>(header_size);
+	constexpr size_t header_size = 4;
+	char header[header_size];
+
 	std::vector<FileData> files;
+	files.reserve(64);
 
-	for (const auto& entry : std::filesystem::directory_iterator(g_core()->dir_path))
+	for (const auto& entry : std::filesystem::directory_iterator(core_path))
 	{
 		if (!entry.is_regular_file()) continue;
 
 		std::ifstream ifile(entry.path(), std::ios::binary);
-		if (!ifile) continue;
+		if (!ifile.read(header, header_size)) continue;
 
-		ifile.read(header.get(), header_size);
 		if (header[0] == 'G' && header[1] == 'F' && header[2] == 'M')
 		{
-			files.push_back({ static_cast<unsigned char>(header[3]), entry.path().wstring() });
+			files.push_back({ static_cast<unsigned char>(header[3]), entry.path() });
 		}
 	}
 
 	if (files.size() < 2) return;
-
 	std::sort(files.begin(), files.end());
 
 	std::ofstream ofile(outfile, std::ios::binary);
 	if (!ofile) return;
+
+	std::vector<char> buffer;
+	buffer.reserve(1024 * 1024 * 4);
 
 	for (const auto& file_data : files)
 	{
 		std::ifstream ifile(file_data.path, std::ios::binary);
 		if (!ifile) continue;
 
-		ifile.seekg(header_size, std::ios::beg);
-		auto file_size = std::filesystem::file_size(file_data.path);
-		std::streamsize data_size = static_cast<std::streamsize>(file_size) - static_cast<std::streamsize>(header_size);
+		const auto file_size = std::filesystem::file_size(file_data.path);
+		const auto data_size = static_cast<std::streamsize>(file_size - header_size);
 
-		std::vector<char> buffer(data_size);
-		ifile.read(buffer.data(), data_size);
+		ifile.seekg(header_size, std::ios::beg);
+		buffer.resize(static_cast<size_t>(data_size));
+
+		if (!ifile.read(buffer.data(), data_size)) continue;
 		ofile.write(buffer.data(), data_size);
 	}
 }
 
 void Funcs::split_file()
 {
-	if (!std::filesystem::exists(g_core()->file_path)) return;
+	const auto& file_path = g_core()->file_path;
+	if (!std::filesystem::exists(file_path)) return;
 
-	auto base_path = g_core()->file_path.substr(0, g_core()->file_path.find_last_of(L'\\'));
-	auto split_dir = base_path + L"\\" + rstr_w(5);
+	const auto base_path = file_path.substr(0, file_path.find_last_of(L'\\'));
+	const std::wstring split_dir = base_path + L"\\" + rstr_w(5);
 
-	std::ifstream ifile(g_core()->file_path, std::ios::binary | std::ios::ate);
+	std::ifstream ifile(file_path, std::ios::binary | std::ios::ate);
 	if (!ifile) return;
 
-	size_t file_size = static_cast<size_t>(ifile.tellg());
+	const size_t file_size = static_cast<size_t>(ifile.tellg());
 	ifile.seekg(0, std::ios::beg);
 
-	if (std::filesystem::exists(split_dir))
+	if (std::filesystem::exists(split_dir)) {
 		std::filesystem::remove_all(split_dir);
+	}
 	std::filesystem::create_directory(split_dir);
 
-	size_t chunk_size = 4 * 1024 * 1024;
-	size_t num_parts = g_core()->split_num;
-	size_t part_size_base = file_size / num_parts;
+	constexpr size_t chunk_size = 4 * 1024 * 1024;
+	const size_t num_parts = g_core()->split_num;
+	const size_t part_size_base = file_size / num_parts;
 
-	std::vector<char> header(4, 0);
-	header[0] = 'G';
-	header[1] = 'F';
-	header[2] = 'M';
+	char header[4] = { 'G', 'F', 'M', 0 };
+
+	std::vector<char> buffer;
+	buffer.reserve(chunk_size);
 
 	for (size_t i = 0; i < num_parts; ++i)
 	{
-		size_t part_size = (i == num_parts - 1)
+		const size_t part_size = (i == num_parts - 1)
 			? part_size_base + file_size % num_parts
 			: part_size_base;
 
-		auto part_path = split_dir + L"\\" + rstr_w(5);
+		const std::wstring part_path = split_dir + L"\\" + rstr_w(5);
 		std::ofstream ofile(part_path, std::ios::binary);
 		if (!ofile) return;
 
 		header[3] = static_cast<char>(i);
-		ofile.write(header.data(), header.size());
-
-		std::vector<char> buffer(part_size);
-		ifile.read(buffer.data(), part_size);
+		ofile.write(header, sizeof(header));
 
 		size_t remaining = part_size;
 		while (remaining > 0)
 		{
-			size_t write_size = std::min(chunk_size, remaining);
-			ofile.write(buffer.data() + (part_size - remaining), write_size);
-			remaining -= write_size;
+			const size_t read_size = std::min(chunk_size, remaining);
+			buffer.resize(read_size);
+			if (!ifile.read(buffer.data(), read_size)) break;
+			ofile.write(buffer.data(), read_size);
+			remaining -= read_size;
 		}
 	}
 
