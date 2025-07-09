@@ -108,7 +108,7 @@ int wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int n
 {
 	WNDCLASSW wc{ 0 };
 	wc.lpfnWndProc = WndProc;
-	wc.hInstance = GetModuleHandleA(0);
+	wc.hInstance = hInstance;
 	wc.lpszClassName = L"pdfsghdfhgskdf";
 
 	RegisterClassW(&wc);
