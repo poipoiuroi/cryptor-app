@@ -6,6 +6,7 @@
 #include <d3d11.h>
 #include <fstream>
 #include <string>
+#include <array>
 #include <vector>
 #include <random>
 #include <thread>
@@ -14,8 +15,8 @@
 #include "imgui/imgui_impl_win32.h"
 #include "imgui/imgui_impl_dx11.h"
 
-#include "cryptor.h"
+#include "cryptort.h"
 #include "funcs.h"
 #include "core.h"
 
-#endif	
+#endif
