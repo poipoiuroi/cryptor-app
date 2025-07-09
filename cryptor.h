@@ -1,27 +1,44 @@
 #pragma once
-#ifndef _CRYPTOR_H_
-#define _CRYPTOR_H_
+#ifndef _CRYPTORT_H_
+#define _CRYPTORT_H_
 
-#include "include.h"
+#include <string>
+#include <array>
+#include <vector>
+#include <windows.h>
 
-using T1 = const std::vector<uint8_t>&;
-using T2 = const std::wstring&;
-
-class Cryptor
+struct CryptorT
 {
-public:
-	std::vector<uint8_t> encrypt_bin(T1 data, T1 key);
-	std::vector<uint8_t> decrypt_bin(T1 data, T1 key);
-	void encrypt_file(T2 ipath, T2 opath, T1 key);
-	void decrypt_file(T2 ipath, T2 opath, T1 key);
-	std::vector<uint8_t> b64_enc(T1 input);
-	std::vector<uint8_t> b64_dec(T1 input);
-	std::vector<uint8_t> sha256(const std::string& input);
+	bool encrypt_bin(
+		const std::vector<uint8_t>& indata,
+		const std::array<uint8_t, 32>& key,
+		std::vector<uint8_t>& outdata) noexcept;
+
+	bool decrypt_bin(
+		const std::vector<uint8_t>& indata,
+		const std::array<uint8_t, 32>& key,
+		std::vector<uint8_t>& outdata) noexcept;
+
+	bool encrypt_file(
+		const std::wstring& ipath,
+		const std::wstring& opath,
+		const std::array<uint8_t, 32>& key) noexcept;
+
+	bool decrypt_file(
+		const std::wstring& ipath,
+		const std::wstring& opath,
+		const std::array<uint8_t, 32>& key) noexcept;
+
+	std::vector<uint8_t> b64_enc(const std::vector<uint8_t>& input) noexcept;
+
+	std::vector<uint8_t> b64_dec(const std::vector<uint8_t>& input) noexcept;
+
+	std::array<uint8_t, 32> sha256(const std::string& input) noexcept;
 };
 
-inline Cryptor* g_cryptor()
+inline CryptorT* g_cryptor()
 {
-	static Cryptor cryptor;
+	static CryptorT cryptor;
 	return &cryptor;
 }
 
