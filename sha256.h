@@ -1,23 +1,20 @@
 #pragma once
-#include <cstdint>
-#include <cstring>
-#include <bit>
+#include <stdint.h>
+#include <intrin.h>
 
 struct alignas(32) sha256_t
 {
+private:
 	uint32_t state[8];
 	uint64_t total = 0;
 	uint8_t buffer[64]{};
 
-private:
-	[[nodiscard]] static constexpr uint32_t rotr(uint32_t x, unsigned n) noexcept { return std::rotr(x, n); }
-	[[nodiscard]] static constexpr uint32_t shr(uint32_t x, unsigned n) noexcept { return x >> n; }
-	[[nodiscard]] static constexpr uint32_t ch(uint32_t x, uint32_t y, uint32_t z) noexcept { return (x & y) ^ (~x & z); }
-	[[nodiscard]] static constexpr uint32_t maj(uint32_t x, uint32_t y, uint32_t z) noexcept { return (x & y) ^ (x & z) ^ (y & z); }
-	[[nodiscard]] static constexpr uint32_t ep0(uint32_t x) noexcept { return rotr(x, 2) ^ rotr(x, 13) ^ rotr(x, 22); }
-	[[nodiscard]] static constexpr uint32_t ep1(uint32_t x) noexcept { return rotr(x, 6) ^ rotr(x, 11) ^ rotr(x, 25); }
-	[[nodiscard]] static constexpr uint32_t sig0(uint32_t x) noexcept { return rotr(x, 7) ^ rotr(x, 18) ^ shr(x, 3); }
-	[[nodiscard]] static constexpr uint32_t sig1(uint32_t x) noexcept { return rotr(x, 17) ^ rotr(x, 19) ^ shr(x, 10); }
+	__forceinline uint32_t ch(uint32_t x, uint32_t y, uint32_t z) noexcept { return (x & y) ^ (~x & z); }
+	__forceinline uint32_t maj(uint32_t x, uint32_t y, uint32_t z) noexcept { return (x & y) ^ (x & z) ^ (y & z); }
+	__forceinline uint32_t ep0(uint32_t x) noexcept { return _rotr(x, 2) ^ _rotr(x, 13) ^ _rotr(x, 22); }
+	__forceinline uint32_t ep1(uint32_t x) noexcept { return _rotr(x, 6) ^ _rotr(x, 11) ^ _rotr(x, 25); }
+	__forceinline uint32_t sig0(uint32_t x) noexcept { return _rotr(x, 7) ^ _rotr(x, 18) ^ (x >> 3); }
+	__forceinline uint32_t sig1(uint32_t x) noexcept { return _rotr(x, 17) ^ _rotr(x, 19) ^ (x >> 10); }
 
 	static constexpr uint32_t k[64]
 	{
@@ -31,9 +28,9 @@ private:
 		0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
 	};
 
-	__forceinline void process() noexcept {
+	void process() noexcept
+	{
 		uint32_t w[64];
-
 		for (int i = 0; i < 16; ++i)
 			w[i] = (uint32_t(buffer[i * 4 + 0]) << 24) |
 			(uint32_t(buffer[i * 4 + 1]) << 16) |
@@ -65,10 +62,9 @@ private:
 	}
 
 public:
-
 	explicit sha256_t() { reset(); }
 
-	__forceinline void reset() noexcept
+	inline void reset() noexcept
 	{
 		total = 0;
 		state[0] = 0x6a09e667; state[1] = 0xbb67ae85;
@@ -77,43 +73,47 @@ public:
 		state[6] = 0x1f83d9ab; state[7] = 0x5be0cd19;
 	}
 
-	__forceinline void update(const void* __restrict input, uint64_t len) noexcept
+	void update(const void* __restrict input, uint64_t len) noexcept
 	{
 		const uint8_t* data = static_cast<const uint8_t*>(input);
 		uint64_t filled = total & 63;
 		total += len;
 
-		if (filled && filled + len >= 64)
+		if (filled)
 		{
-			uint64_t copy = 64 - filled;
-			memcpy(buffer + filled, data, copy);
+			uint64_t need = 64 - filled;
+			if (len < need)
+			{
+				__movsb(buffer + filled, data, size_t(len));
+				return;
+			}
+			__movsb(buffer + filled, data, size_t(need));
 			process();
-			data += copy;
-			len -= copy;
-			filled = 0;
+			data += need;
+			len -= need;
 		}
 
 		while (len >= 64)
 		{
-			memcpy(buffer, data, 64);
+			__movsb(buffer, data, 64);
 			process();
 			data += 64;
 			len -= 64;
 		}
 
-		if (len > 0)
-			memcpy(buffer + filled, data, len);
+		if (len) __movsb(buffer, data, size_t(len));
 	}
 
-	__forceinline void finish(void* __restrict output) noexcept
+	void finish(void* __restrict output) noexcept
 	{
 		uint8_t lenbuf[8];
-		uint64_t bits = total * 8;
+		uint64_t bits = total << 3;
 		for (int i = 0; i < 8; ++i)
 			lenbuf[7 - i] = static_cast<uint8_t>(bits >> (i * 8));
 
 		uint64_t last = total & 63;
 		buffer[last++] = 0x80;
+
 		if (last > 56)
 		{
 			memset(buffer + last, 0, 64 - last);
@@ -122,7 +122,8 @@ public:
 		}
 
 		memset(buffer + last, 0, 56 - last);
-		memcpy(buffer + 56, lenbuf, 8);
+		for (int i = 0; i < 8; ++i) buffer[56 + i] = lenbuf[i];
+
 		process();
 
 		uint8_t* out = static_cast<uint8_t*>(output);
