@@ -1,17 +1,15 @@
 #pragma once
 #include <cstdint>
-#include <immintrin.h>
 #include <intrin.h>
-#include <cstring>
 
 struct alignas(16) aes256_t
 {
 	static constexpr size_t AES_BLOCK = 16;
-	static constexpr size_t rounds = 14;
+	static constexpr size_t Nr = 14;
 
-	__m128i round_keys[rounds + 1];
+	__m128i round_keys[Nr + 1];
 
-	__forceinline static void assist_1(__m128i* __restrict tmp1, __m128i* __restrict tmp2)
+	__forceinline void assist_1(__m128i* __restrict tmp1, __m128i* __restrict tmp2)
 	{
 		__m128i tmp4;
 		*tmp2 = _mm_shuffle_epi32(*tmp2, 0xff);
@@ -24,7 +22,7 @@ struct alignas(16) aes256_t
 		*tmp1 = _mm_xor_si128(*tmp1, *tmp2);
 	}
 
-	__forceinline static void assist_2(__m128i* __restrict tmp1, __m128i* __restrict tmp3)
+	__forceinline void assist_2(__m128i* __restrict tmp1, __m128i* __restrict tmp3)
 	{
 		__m128i tmp2, tmp4;
 		tmp4 = _mm_aeskeygenassist_si128(*tmp1, 0x0);
@@ -64,21 +62,21 @@ struct alignas(16) aes256_t
 	__forceinline void decrypt_block(uint8_t* __restrict block) const
 	{
 		__m128i state = _mm_load_si128(reinterpret_cast<const __m128i*>(block));
-		state = _mm_xor_si128(state, round_keys[rounds]);
+		state = _mm_xor_si128(state, round_keys[Nr]);
 
-		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[rounds - 1]));
-		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[rounds - 2]));
-		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[rounds - 3]));
-		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[rounds - 4]));
-		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[rounds - 5]));
-		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[rounds - 6]));
-		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[rounds - 7]));
-		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[rounds - 8]));
-		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[rounds - 9]));
-		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[rounds - 10]));
-		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[rounds - 11]));
-		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[rounds - 12]));
-		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[rounds - 13]));
+		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[Nr - 1]));
+		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[Nr - 2]));
+		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[Nr - 3]));
+		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[Nr - 4]));
+		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[Nr - 5]));
+		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[Nr - 6]));
+		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[Nr - 7]));
+		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[Nr - 8]));
+		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[Nr - 9]));
+		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[Nr - 10]));
+		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[Nr - 11]));
+		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[Nr - 12]));
+		state = _mm_aesdec_si128(state, _mm_aesimc_si128(round_keys[Nr - 13]));
 		state = _mm_aesdeclast_si128(state, round_keys[0]);
 
 		_mm_store_si128(reinterpret_cast<__m128i*>(block), state);
